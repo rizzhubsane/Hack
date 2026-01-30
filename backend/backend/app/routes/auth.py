@@ -1,6 +1,6 @@
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.db import get_db
 from app.schemas.user import UserCreate, UserResponse
@@ -43,3 +43,26 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
         "user_id": user_or_provider.id,
         "username": user_or_provider.username
     }
+
+@router.get("/me")
+async def get_current_user_info(
+    db: AsyncSession = Depends(get_db),
+    token: str = Depends(OAuth2PasswordBearer(tokenUrl="auth/login"))
+):
+    from jose import jwt, JWTError
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        username: str = payload.get("sub")
+        user_type: str = payload.get("type")
+        user_id: int = payload.get("id")
+        
+        if username is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        return {
+            "id": user_id,
+            "username": username,
+            "user_type": user_type
+        }
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")

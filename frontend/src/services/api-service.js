@@ -46,7 +46,7 @@ export const authAPI = {
   // Login user
   login: async (credentials) => {
     const formData = new URLSearchParams();
-    formData.append('username', credentials.email);
+    formData.append('username', credentials.username);
     formData.append('password', credentials.password);
 
     const url = `${API_BASE_URL}/auth/login`;

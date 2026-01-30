@@ -38,13 +38,13 @@ const AppointmentSystem = () => {
     setAuthError('');
     try {
       try {
-        await authAPI.login({ email: loginEmail.trim(), password: loginPassword.trim() });
+        await authAPI.login({ username: loginEmail.trim(), password: loginPassword.trim() });
       } catch (err) {
         // Auto-register for demo if login fails (simplified flow)
         if (loginEmail.includes('@')) {
           try {
             await authAPI.register({ email: loginEmail.trim(), password: loginPassword.trim(), username: loginEmail.split('@')[0].trim() });
-            await authAPI.login({ email: loginEmail.trim(), password: loginPassword.trim() });
+            await authAPI.login({ username: loginEmail.trim(), password: loginPassword.trim() });
           } catch (regErr) {
             throw err; // Throw original login error if register also fails
           }
@@ -1096,7 +1096,47 @@ const AppointmentSystem = () => {
       {/* Main Content */}
       <main className="main-content">
         {currentView === 'home' && <HomeView />}
-        {currentView === 'login' && <LoginView />}
+        {currentView === 'login' && (
+          <div className="login-view" style={{ maxWidth: '400px', margin: '4rem auto', padding: '2rem', background: 'rgba(255,255,255,0.05)', borderRadius: '20px' }}>
+            <h2 style={{ marginBottom: '2rem', textAlign: 'center' }}>Welcome Back</h2>
+            <form onSubmit={handleLogin}>
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem' }}>Username</label>
+                <input
+                  type="text"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  style={{ width: '100%', padding: '0.75rem', borderRadius: '10px', background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white' }}
+                  placeholder="citydoctor"
+                />
+              </div>
+              <div style={{ marginBottom: '2rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem' }}>Password</label>
+                <input
+                  type="password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  style={{ width: '100%', padding: '0.75rem', borderRadius: '10px', background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white' }}
+                  placeholder="password123"
+                />
+              </div>
+              {authError && <p style={{ color: '#FF6B6B', marginBottom: '1rem' }}>{authError}</p>}
+              <button type="submit" className="search-btn" style={{ width: '100%', justifyContent: 'center' }}>
+                Login / Register
+              </button>
+              <div style={{ marginTop: '2rem', padding: '1rem', background: 'rgba(78, 205, 196, 0.1)', borderRadius: '10px', border: '1px solid rgba(78, 205, 196, 0.3)' }}>
+                <p style={{ fontSize: '0.85rem', color: 'rgba(255, 255, 255, 0.7)', marginBottom: '0.5rem' }}>
+                  <strong style={{ color: '#4ECDC4' }}>Try these provider accounts:</strong>
+                </p>
+                <ul style={{ fontSize: '0.85rem', color: 'rgba(255, 255, 255, 0.6)', paddingLeft: '1.5rem', margin: 0 }}>
+                  <li><code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.2rem 0.4rem', borderRadius: '4px' }}>citydoctor</code> / password123</li>
+                  <li><code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.2rem 0.4rem', borderRadius: '4px' }}>beautyspa</code> / password123</li>
+                  <li><code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.2rem 0.4rem', borderRadius: '4px' }}>brightsmile</code> / password123</li>
+                </ul>
+              </div>
+            </form>
+          </div>
+        )}
         {currentView === 'providers' && <ProvidersView />}
         {currentView === 'booking' && <BookingView />}
         {currentView === 'queue' && <QueueView />}

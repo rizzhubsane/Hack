@@ -745,13 +745,13 @@ const AppointmentSystem = () => {
         setAuthError('');
         try {
             try {
-                await authAPI.login({ email: loginEmail, password: loginPassword });
+                await authAPI.login({ username: loginEmail, password: loginPassword });
             } catch (err) {
                 // Auto-register for demo if login fails (simplified flow)
                 if (loginEmail.includes('@')) {
                     try {
                         await authAPI.register({ email: loginEmail, password: loginPassword, username: loginEmail.split('@')[0] });
-                        await authAPI.login({ email: loginEmail, password: loginPassword });
+                        await authAPI.login({ username: loginEmail, password: loginPassword });
                     } catch (regErr) {
                         throw err; // Throw original login error if register also fails
                     }

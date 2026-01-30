@@ -1,40 +1,25 @@
-# System files
-.DS_Store
-Thumbs.db
-
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.env
-.venv
-env/
 venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Logs
-*.log
+.env
+.pytest_cache/
+*.db
+*.sqlite3
 
 # Node
 node_modules/
 npm-debug.log
 yarn-error.log
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Databases
-*.db
-*.sqlite3
 
 # IDE
-.idea/
 .vscode/
+.idea/
 
-# Build
-dist/
-build/
+# OS
+.DS_Store
+Thumbs.db
+
+# Project Specific
+backend/appointment.db

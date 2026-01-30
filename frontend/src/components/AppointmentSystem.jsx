@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, MapPin, Star, TrendingUp, Users, Zap, Search, Filter, ChevronRight, Bell, User, Home, BarChart3, Heart, CheckCircle, AlertCircle, Sparkles } from 'lucide-react';
+
+
+import { Calendar, Clock, MapPin, Star, TrendingUp, Users, Zap, Search, Filter, ChevronRight, Bell, User, Home, BarChart3, Heart, CheckCircle, AlertCircle, Sparkles, LogOut, Lock } from 'lucide-react';
+import { providersAPI, servicesAPI, authAPI, appointmentsAPI, QueueWebSocket } from '../services/api-service';
 
 const AppointmentSystem = () => {
   const [currentView, setCurrentView] = useState('home');
@@ -10,18 +13,192 @@ const AppointmentSystem = () => {
   const [recommendations, setRecommendations] = useState([]);
   const [userAppointments, setUserAppointments] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [providerServices, setProviderServices] = useState([]);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState(null);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+
+  useEffect(() => {
+    // Check for existing token
+    const token = localStorage.getItem('authToken');
+    if (token) {
+      setIsAuthenticated(true);
+      // Optionally fetch user profile here
+      authAPI.getCurrentUser().then(u => setUser(u)).catch(() => {
+        localStorage.removeItem('authToken');
+        setIsAuthenticated(false);
+      });
+    }
+  }, []);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    try {
+      try {
+        await authAPI.login({ email: loginEmail.trim(), password: loginPassword.trim() });
+      } catch (err) {
+        // Auto-register for demo if login fails (simplified flow)
+        if (loginEmail.includes('@')) {
+          try {
+            await authAPI.register({ email: loginEmail.trim(), password: loginPassword.trim(), username: loginEmail.split('@')[0].trim() });
+            await authAPI.login({ email: loginEmail.trim(), password: loginPassword.trim() });
+          } catch (regErr) {
+            throw err; // Throw original login error if register also fails
+          }
+        } else {
+          throw err;
+        }
+      }
+      setIsAuthenticated(true);
+      const currentUser = await authAPI.getCurrentUser();
+      setUser(currentUser);
+      if (currentUser.user_type === 'provider') {
+        setCurrentView('provider-dashboard');
+      } else {
+        setCurrentView('home');
+      }
+    } catch (error) {
+      console.error("Login Error Details:", error);
+      setAuthError(`Login failed: ${error.message}`);
+    }
+  };
+
+  const handleLogout = () => {
+    authAPI.logout();
+    setIsAuthenticated(false);
+    setUser(null);
+    setCurrentView('home');
+  };
+
+  const handleBookAppointment = async () => {
+    if (!isAuthenticated) {
+      setCurrentView('login');
+      return;
+    }
+    if (!selectedService) return;
+
+    try {
+      // Create appointment for "Today" at selected time (or default 30 mins from now)
+      const now = new Date();
+      const appointmentData = {
+        service_id: selectedService.id,
+        provider_id: selectedProvider.id,
+        start_time: new Date(now.getTime() + 30 * 60000).toISOString(), // Mock time: 30 mins from now
+        notes: "Booked via QuickBook"
+      };
+
+      const result = await appointmentsAPI.createAppointment(appointmentData);
+      // Refresh appointments
+      const apps = await appointmentsAPI.getUserAppointments(user.id);
+      setUserAppointments(apps);
+
+      alert(`Booking Successful! Your Token Number is #${result.token_number}`);
+
+      setCurrentView('queue'); // Send to queue view to track
+    } catch (error) {
+      alert("Booking failed: " + error.message);
+    }
+  };
+
+  const handleCancelAppointment = async (id) => {
+    try {
+      await appointmentsAPI.cancelAppointment(id);
+      // Refresh list
+      const apps = await appointmentsAPI.getUserAppointments(user.id);
+      setUserAppointments(apps);
+    } catch (error) {
+      console.error("Cancel failed", error);
+    }
+  };
+
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      appointmentsAPI.getUserAppointments(user.id).then(setUserAppointments).catch(console.error);
+    }
+  }, [isAuthenticated, user]);
+
+  useEffect(() => {
+    if (selectedProvider) {
+      const fetchServices = async () => {
+        try {
+          const servicesData = await servicesAPI.getServices(selectedProvider.id);
+          setProviderServices(servicesData);
+        } catch (error) {
+          console.error("Failed to load services", error);
+        }
+      };
+      fetchServices();
+    }
+  }, [selectedProvider]);
 
   // Simulated data
+  // Categories aligned with Java Reference
   const categories = [
-    { id: 1, name: 'Healthcare', icon: '🏥', color: '#FF6B6B', providers: 245 },
-    { id: 2, name: 'Beauty & Spa', icon: '💆', color: '#4ECDC4', providers: 189 },
-    { id: 3, name: 'Fitness', icon: '💪', color: '#95E1D3', providers: 156 },
-    { id: 4, name: 'Consultation', icon: '👔', color: '#FFE66D', providers: 312 },
-    { id: 5, name: 'Automotive', icon: '🚗', color: '#A8E6CF', providers: 98 },
-    { id: 6, name: 'Home Services', icon: '🏠', color: '#FFB6B9', providers: 203 },
+    { id: 1, name: 'Doctor', icon: '🩺', color: '#FF6B6B', providers: 12 },
+    { id: 2, name: 'Beauty Parlour', icon: '💇', color: '#4ECDC4', providers: 8 },
+    { id: 3, name: 'Lawyer', icon: '⚖️', color: '#FFE66D', providers: 5 },
+    { id: 4, name: 'Dentist', icon: '🦷', color: '#A8E6CF', providers: 6 },
   ];
 
-  const providers = [
+  const [providers, setProviders] = useState([]);
+
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+
+    try {
+      // Switch to providers view to show results
+      const results = await providersAPI.searchProviders(searchQuery);
+      // Map results to match frontend format if needed
+      const formattedResults = results.map(p => ({
+        id: p.id,
+        name: p.name,
+        category: p.profession,
+        rating: p.avg_rating || 4.5,
+        reviews: p.total_reviews || 0,
+        location: 'Downtown', // Mock
+        image: p.profession === 'Healthcare' ? '🏥' : '💆',
+        waitTime: 15,
+        available: p.is_active,
+        queueLength: 0,
+        services: [] // We fetch these on selection
+      }));
+      setProviders(formattedResults);
+      setCurrentView('providers');
+    } catch (error) {
+      console.error("Search failed:", error);
+    }
+  };
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const providersData = await providersAPI.getProviders();
+        const formattedProviders = providersData.map(p => ({
+          id: p.id,
+          name: p.name,
+          category: p.profession,
+          rating: p.avg_rating || 4.5,
+          reviews: Math.floor(Math.random() * 500) + 10,
+          location: 'Downtown',
+          image: p.profession === 'Healthcare' ? '🏥' : '💆',
+          waitTime: 15, // Mock value
+          available: p.is_active,
+          queueLength: 0, // Mock value
+          services: []
+        }));
+        setProviders(formattedProviders);
+      } catch (error) {
+        console.error("Failed to load providers:", error);
+      }
+    };
+    loadData();
+  }, []);
+
+  const dummy_providers = [
     {
       id: 1,
       name: 'CityHealth Medical Center',
@@ -90,19 +267,24 @@ const AppointmentSystem = () => {
     { time: '04:00 PM', available: true },
   ];
 
-  // Simulate live queue updates
+  // Setup WebSocket for Real-time Queue
   useEffect(() => {
-    const interval = setInterval(() => {
-      setQueueData([
-        { position: 1, name: 'John D.', status: 'in-service', eta: 'Now' },
-        { position: 2, name: 'Sarah M.', status: 'waiting', eta: '5 min' },
-        { position: 3, name: 'Mike R.', status: 'waiting', eta: '15 min' },
-        { position: 4, name: 'You', status: 'waiting', eta: '25 min', highlight: true },
-        { position: 5, name: 'Emma L.', status: 'waiting', eta: '35 min' },
-      ]);
-    }, 3000);
-    return () => clearInterval(interval);
-  }, []);
+    // Only connect if we have an active appointment (mocking ID 1 for now or selected provider)
+    // In real app, we'd get the appointment ID from user's active appointment
+    if (selectedProvider && isAuthenticated) {
+      const socket = new QueueWebSocket(1); // Using appointment_id=1 as testing default
+
+      socket.on('update', (data) => {
+        if (data.queue) {
+          setQueueData(data.queue);
+        }
+      });
+
+      socket.connect();
+
+      return () => socket.disconnect();
+    }
+  }, [selectedProvider, isAuthenticated]);
 
   // AI Recommendations simulation
   useEffect(() => {
@@ -134,6 +316,39 @@ const AppointmentSystem = () => {
     ]);
   }, []);
 
+  // Login View
+  const LoginView = () => (
+    <div className="login-view" style={{ maxWidth: '400px', margin: '4rem auto', padding: '2rem', background: 'rgba(255,255,255,0.05)', borderRadius: '20px' }}>
+      <h2 style={{ marginBottom: '2rem', textAlign: 'center' }}>Welcome Back</h2>
+      <form onSubmit={handleLogin}>
+        <div style={{ marginBottom: '1rem' }}>
+          <label style={{ display: 'block', marginBottom: '0.5rem' }}>Email / Username</label>
+          <input
+            type="text"
+            value={loginEmail}
+            onChange={(e) => setLoginEmail(e.target.value)}
+            style={{ width: '100%', padding: '0.75rem', borderRadius: '10px', background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white' }}
+            placeholder="guest@example.com"
+          />
+        </div>
+        <div style={{ marginBottom: '2rem' }}>
+          <label style={{ display: 'block', marginBottom: '0.5rem' }}>Password</label>
+          <input
+            type="password"
+            value={loginPassword}
+            onChange={(e) => setLoginPassword(e.target.value)}
+            style={{ width: '100%', padding: '0.75rem', borderRadius: '10px', background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white' }}
+            placeholder="password"
+          />
+        </div>
+        {authError && <p style={{ color: '#FF6B6B', marginBottom: '1rem' }}>{authError}</p>}
+        <button type="submit" className="search-btn" style={{ width: '100%', justifyContent: 'center' }}>
+          Login / Register
+        </button>
+      </form>
+    </div>
+  );
+
   // Home View
   const HomeView = () => (
     <div className="home-view">
@@ -148,8 +363,8 @@ const AppointmentSystem = () => {
           <p className="hero-subtitle">
             AI-powered appointments with real-time queue tracking
           </p>
-          
-          <div className="search-bar">
+
+          <form className="search-bar" onSubmit={handleSearch}>
             <Search size={20} />
             <input
               type="text"
@@ -157,11 +372,11 @@ const AppointmentSystem = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
-            <button className="search-btn">
+            <button type="submit" className="search-btn">
               <Sparkles size={18} />
               Search
             </button>
-          </div>
+          </form>
 
           <div className="quick-stats">
             <div className="stat">
@@ -381,24 +596,31 @@ const AppointmentSystem = () => {
           <section className="booking-section">
             <h3>Select Service</h3>
             <div className="services-list">
-              {selectedProvider?.services.map((service) => (
-                <div
-                  key={service.id}
-                  className={`service-option ${selectedService?.id === service.id ? 'selected' : ''}`}
-                  onClick={() => setSelectedService(service)}
-                >
-                  <div className="service-details">
-                    <h4>{service.name}</h4>
-                    <div className="service-meta">
-                      <span>
-                        <Clock size={14} />
-                        {service.duration} min
-                      </span>
+              {providerServices.length > 0 ? (
+                providerServices.map((service) => (
+                  <div
+                    key={service.id}
+                    className={`service-option ${selectedService?.id === service.id ? 'selected' : ''}`}
+                    onClick={() => setSelectedService(service)}
+                  >
+                    <div className="service-details">
+                      <h4>{service.name}</h4>
+                      <div className="service-meta">
+                        <span>
+                          <Clock size={14} />
+                          {service.duration} min
+                        </span>
+                      </div>
                     </div>
+                    <div className="service-price">₹{service.price}</div>
                   </div>
-                  <div className="service-price">₹{service.price}</div>
+                ))
+              ) : (
+                <div className="no-services">
+                  <p>No services found for this provider.</p>
+                  <p className="debug-hint text-sm text-gray-400">Debug: Provider ID {selectedProvider?.id}</p>
                 </div>
-              ))}
+              )}
             </div>
           </section>
 
@@ -459,8 +681,8 @@ const AppointmentSystem = () => {
                   <span>Total</span>
                   <span>₹{selectedService.price}</span>
                 </div>
-                <button className="confirm-btn">
-                  Confirm Booking
+                <button className="confirm-btn" onClick={handleBookAppointment}>
+                  {isAuthenticated ? 'Confirm Booking' : 'Login to Book'}
                   <CheckCircle size={18} />
                 </button>
               </>
@@ -488,72 +710,281 @@ const AppointmentSystem = () => {
   );
 
   // Queue Tracking View
-  const QueueView = () => (
-    <div className="queue-view">
-      <div className="view-header">
-        <h2>Live Queue Tracking</h2>
-        <div className="live-indicator">
-          <div className="pulse"></div>
-          <span>Live</span>
-        </div>
-      </div>
+  const QueueView = () => {
+    const [queueStatus, setQueueStatus] = useState(null);
+    const [loading, setLoading] = useState(true);
 
-      <div className="queue-container">
-        <div className="queue-info-card">
-          <div className="queue-position">
-            <div className="position-label">Your Position</div>
-            <div className="position-number">#4</div>
-            <div className="eta">
-              <Clock size={20} />
-              <span>Estimated wait: 25 minutes</span>
+    const activeAppt = userAppointments.find(a =>
+      ['SCHEDULED', 'IN_PROGRESS'].includes(a.status) &&
+      new Date(a.date_time).getDate() === new Date().getDate()
+    );
+
+    useEffect(() => {
+      if (activeAppt) {
+        const fetchStatus = async () => {
+          try {
+            const status = await appointmentsAPI.getQueuePosition(activeAppt.id);
+            setQueueStatus(status);
+          } catch (e) {
+            console.error("Queue fetch error", e);
+          } finally {
+            setLoading(false);
+          }
+        };
+        fetchStatus();
+        const interval = setInterval(fetchStatus, 5000);
+        return () => clearInterval(interval);
+      } else {
+        setLoading(false);
+      }
+    }, [activeAppt]);
+
+    if (!activeAppt) {
+      return (
+        <div className="queue-view" style={{ textAlign: 'center', paddingTop: '4rem' }}>
+          <h2>No Active Queue</h2>
+          <p>You don't have any appointments scheduled for today.</p>
+          <button className="action-btn" onClick={() => setCurrentView('providers')} style={{ marginTop: '1rem' }}>
+            Book Appointment
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="queue-view">
+        <div className="view-header">
+          <h2>Live Queue Tracking</h2>
+          <div className="live-indicator">
+            <div className="pulse"></div>
+            <span>Live</span>
+          </div>
+        </div>
+
+        <div className="queue-container">
+          <div className="queue-info-card">
+            <div className="queue-position">
+              <div className="position-label">Your Token</div>
+              <div className="position-number" style={{ color: '#4ECDC4' }}>#{queueStatus?.your_token || activeAppt.token_number}</div>
+              <div className="eta">
+                <span style={{ fontSize: '0.9rem', color: '#888' }}>Current Serving: #{queueStatus?.current_token || '-'}</span>
+              </div>
+              <div className="eta" style={{ marginTop: '0.5rem' }}>
+                <Clock size={20} />
+                <span>
+                  {queueStatus?.position === 0 ? "You are next!" :
+                    queueStatus?.position < 0 ? "It's your turn!" :
+                      `People ahead: ${queueStatus?.position || 0} (~${queueStatus?.wait_time || 0} min)`}
+                </span>
+              </div>
+            </div>
+
+            <div className="appointment-details">
+              <h3>{activeAppt.provider_id}</h3> {/* Ideal: Provider Name */}
+              <p>{activeAppt.service_name}</p>
+              <p className="appointment-time">
+                <Calendar size={16} />
+                {new Date(activeAppt.date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </p>
             </div>
           </div>
 
-          <div className="appointment-details">
-            <h3>CityHealth Medical Center</h3>
-            <p>General Consultation • Dr. Sarah Johnson</p>
-            <p className="appointment-time">
-              <Calendar size={16} />
-              Today, 3:00 PM
-            </p>
+          <div className="queue-actions">
+            {/* Actions */}
+            <button className="action-btn  danger" onClick={() => handleCancelAppointment(activeAppt.id)}>
+              Cancel Appointment
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+
+
+  // Provider Dashboard View (Cockpit)
+  const ProviderDashboard = () => {
+    const [currentServing, setCurrentServing] = useState(null);
+    const [waitingList, setWaitingList] = useState([]);
+    const [loading, setLoading] = useState(false);
+
+    const fetchCockpitData = async () => {
+      setLoading(true);
+      try {
+        const apps = await appointmentsAPI.getProviderAppointments();
+        // Filter appointments for Today
+        // Backend typically returns all or filtered. Let's assume list.
+        // Sort by token/time
+
+        const now = new Date();
+        const active = apps.filter(a => ['SCHEDULED', 'IN_PROGRESS'].includes(a.status));
+
+        const current = active.find(a => a.status === 'IN_PROGRESS');
+        const waiting = active.filter(a => a.status === 'SCHEDULED' && new Date(a.date_time).getDate() === now.getDate()); // Naive day check
+        const sortedWaiting = waiting.sort((a, b) => a.token_number - b.token_number);
+
+        setCurrentServing(current);
+        setWaitingList(sortedWaiting);
+      } catch (e) {
+        console.error("Cockpit load error", e);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    useEffect(() => {
+      fetchCockpitData();
+      // Poll every 5s for updates (Poor man's real-time)
+      const interval = setInterval(fetchCockpitData, 5000);
+      return () => clearInterval(interval);
+    }, []);
+
+    const handleCallNext = async () => {
+      try {
+        await appointmentsAPI.callNext();
+        fetchCockpitData();
+      } catch (e) {
+        alert("Error calling next: " + e.message);
+      }
+    };
+
+    const handleFinish = async () => {
+      try {
+        await appointmentsAPI.finishCurrent();
+        fetchCockpitData();
+      } catch (e) {
+        alert("Error finishing: " + e.message);
+      }
+    };
+
+    return (
+      <div className="dashboard-view">
+        <div className="view-header">
+          <h2>Live Session Control (Cockpit)</h2>
+          <div className="live-indicator">
+            <span style={{ color: '#4ECDC4' }}>● Live</span>
+            <span style={{ marginLeft: 10 }}>{user?.username}</span>
           </div>
         </div>
 
-        <div className="queue-list">
-          <h3>Queue Status</h3>
-          {queueData.map((person) => (
-            <div
-              key={person.position}
-              className={`queue-item ${person.highlight ? 'highlight' : ''} ${person.status}`}
-            >
-              <div className="queue-position-badge">{person.position}</div>
-              <div className="queue-person-info">
-                <div className="queue-name">{person.name}</div>
-                <div className="queue-eta">{person.eta}</div>
+        <div className="cockpit-container" style={{ padding: '1rem' }}>
+          {/* CURRENT SERVING */}
+          <section className="current-serving-section" style={{ marginBottom: '2rem' }}>
+            <h3 style={{ color: '#888', marginBottom: '1rem' }}>Currently Serving</h3>
+            {currentServing ? (
+              <div className="current-card" style={{
+                background: 'linear-gradient(135deg, rgba(78, 205, 196, 0.1) 0%, rgba(78, 205, 196, 0.2) 100%)',
+                border: '2px solid #4ECDC4',
+                borderRadius: '16px',
+                padding: '2rem',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <div>
+                  <div style={{ fontSize: '3rem', fontWeight: 'bold', color: '#4ECDC4' }}>
+                    Token #{currentServing.token_number}
+                  </div>
+                  <div style={{ fontSize: '1.5rem', marginTop: '0.5rem' }}>{currentServing.service_name}</div>
+                  {/* We might not have username easily unless backend joins it. Model has user_id. 
+                                Let's assume we might show ID or just Service for now until backend sends name. 
+                                The Java ref shows username. Backend schema AppointmentResponse needs to verify if it has user info.
+                            */}
+                  <div style={{ color: '#aaa', marginTop: '0.5rem' }}>User ID: {currentServing.user_id}</div>
+                </div>
+                <button
+                  className="action-btn"
+                  style={{
+                    background: '#FF6B6B',
+                    color: 'white',
+                    padding: '1rem 2rem',
+                    fontSize: '1.2rem',
+                    border: 'none',
+                    borderRadius: '12px',
+                    cursor: 'pointer'
+                  }}
+                  onClick={handleFinish}
+                >
+                  Finish Current
+                </button>
               </div>
-              <div className="queue-status-indicator">
-                {person.status === 'in-service' ? (
-                  <div className="status-badge in-service">In Service</div>
-                ) : (
-                  <div className="status-badge waiting">Waiting</div>
-                )}
+            ) : (
+              <div className="empty-state" style={{
+                padding: '2rem',
+                textAlign: 'center',
+                border: '2px dashed #444',
+                borderRadius: '16px',
+                color: '#666'
+              }}>
+                <h3>Room Empty (Idle)</h3>
+                <p>Call the next customer to start</p>
               </div>
-            </div>
-          ))}
-        </div>
+            )}
+          </section>
 
-        <div className="queue-actions">
-          <button className="action-btn secondary">
-            <Bell size={18} />
-            Notify Me
-          </button>
-          <button className="action-btn danger">
-            Cancel Appointment
-          </button>
+          {/* WAITING LIST */}
+          <section className="waiting-list-section">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ color: '#888' }}>Waiting Room ({waitingList.length})</h3>
+              {!currentServing && waitingList.length > 0 && (
+                <button
+                  className="action-btn"
+                  style={{
+                    background: '#4ECDC4',
+                    color: 'black',
+                    padding: '0.8rem 1.5rem',
+                    fontWeight: 'bold',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                  onClick={handleCallNext}
+                >
+                  <Bell size={18} style={{ marginRight: 8, verticalAlign: 'middle' }} />
+                  Call Next Person
+                </button>
+              )}
+            </div>
+
+            <div className="waiting-list" style={{ display: 'grid', gap: '1rem' }}>
+              {waitingList.map((appt) => (
+                <div key={appt.id} className="waiting-card" style={{
+                  background: '#222',
+                  padding: '1rem',
+                  borderRadius: '12px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <span style={{
+                      background: '#333',
+                      padding: '0.5rem 1rem',
+                      borderRadius: '8px',
+                      fontWeight: 'bold',
+                      color: '#fff'
+                    }}>#{appt.token_number}</span>
+                    <div>
+                      <div style={{ fontWeight: 'bold' }}>{appt.service_name}</div>
+                      <div style={{ fontSize: '0.9rem', color: '#888' }}>
+                        {new Date(appt.date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                  </div>
+                  {currentServing && (
+                    <span style={{ fontSize: '0.9rem', color: '#666' }}>Waiting...</span>
+                  )}
+                </div>
+              ))}
+              {waitingList.length === 0 && (
+                <p style={{ color: '#666', fontStyle: 'italic' }}>No one waiting.</p>
+              )}
+            </div>
+          </section>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   // Dashboard View
   const DashboardView = () => (
@@ -569,53 +1000,39 @@ const AppointmentSystem = () => {
       </div>
 
       <div className="appointments-list">
-        <div className="appointment-card upcoming">
-          <div className="appointment-status">
-            <AlertCircle size={18} />
-            <span>In 2 hours</span>
-          </div>
-          <div className="appointment-content">
-            <h3>CityHealth Medical Center</h3>
-            <p>General Consultation</p>
-            <div className="appointment-meta">
-              <span>
-                <Calendar size={14} />
-                Today, 3:00 PM
-              </span>
-              <span>
-                <MapPin size={14} />
-                Downtown, 2.3 km
-              </span>
+        {userAppointments.length > 0 ? (
+          userAppointments.map((app) => (
+            <div key={app.id} className="appointment-card upcoming">
+              <div className="appointment-status">
+                <AlertCircle size={18} />
+                <span>{app.status || 'Scheduled'}</span>
+              </div>
+              <div className="appointment-content">
+                <h3>Appointment #{app.id}</h3>
+                <p>Service: {app.service ? app.service.name : 'Unknown Service'}</p>
+                <div className="appointment-meta">
+                  <span>
+                    <Calendar size={14} />
+                    {new Date(app.start_time).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+              <div className="appointment-actions">
+                <button
+                  className="action-link"
+                  style={{ color: '#FF6B6B' }}
+                  onClick={() => handleCancelAppointment(app.id)}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
-          </div>
-          <div className="appointment-actions">
-            <button className="action-link" onClick={() => setCurrentView('queue')}>
-              View Queue
-            </button>
-            <button className="action-link">Reschedule</button>
-          </div>
-        </div>
-
-        <div className="appointment-card completed">
-          <div className="appointment-status success">
-            <CheckCircle size={18} />
-            <span>Completed</span>
-          </div>
-          <div className="appointment-content">
-            <h3>Glow Spa & Wellness</h3>
-            <p>Facial Treatment</p>
-            <div className="appointment-meta">
-              <span>
-                <Calendar size={14} />
-                Jan 20, 2:00 PM
-              </span>
-            </div>
-          </div>
-          <div className="appointment-actions">
-            <button className="action-link">Rate Service</button>
-            <button className="action-link">Book Again</button>
-          </div>
-        </div>
+          ))
+        ) : (
+          <p style={{ color: 'rgba(255,255,255,0.6)', textAlign: 'center', padding: '2rem' }}>
+            No upcoming appointments found.
+          </p>
+        )}
       </div>
     </div>
   );
@@ -654,23 +1071,68 @@ const AppointmentSystem = () => {
             <Heart size={20} />
             <span>Favorites</span>
           </button>
-          <button>
+          <button onClick={() => isAuthenticated ? setCurrentView('dashboard') : setCurrentView('login')}>
             <User size={20} />
-            <span>Profile</span>
+            <span>{isAuthenticated ? 'Profile' : 'Login'}</span>
           </button>
+          {isAuthenticated && (
+            <button onClick={handleLogout} style={{ marginLeft: '10px' }}>
+              <LogOut size={20} />
+            </button>
+          )}
         </div>
       </nav>
 
       {/* Main Content */}
       <main className="main-content">
         {currentView === 'home' && <HomeView />}
+        {currentView === 'login' && <LoginView />}
         {currentView === 'providers' && <ProvidersView />}
         {currentView === 'booking' && <BookingView />}
         {currentView === 'queue' && <QueueView />}
         {currentView === 'dashboard' && <DashboardView />}
+        {currentView === 'provider-dashboard' && <ProviderDashboard />}
+
       </main>
 
+      {/* Debug Panel - Remove in production */}
+      <div className="debug-panel">
+        <div>Auth: {isAuthenticated ? 'YES' : 'NO'}</div>
+        <div>User: {user ? user.username : 'None'} ({user?.user_type})</div>
+        <div>View: {currentView}</div>
+        <div>Prov: {selectedProvider?.id}</div>
+        <div>Svcs: {providerServices.length}</div>
+        <button onClick={() => {
+          localStorage.removeItem('authToken');
+          setIsAuthenticated(false);
+          setUser(null);
+          window.location.reload();
+        }}>Force Logout</button>
+      </div>
+
       <style jsx>{`
+        /* Debug Panel */
+        .debug-panel {
+          position: fixed;
+          bottom: 10px;
+          right: 10px;
+          background: rgba(0, 0, 0, 0.8);
+          padding: 10px;
+          border-radius: 8px;
+          font-size: 12px;
+          z-index: 9999;
+          color: #0f0;
+          max-width: 300px;
+        }
+        .debug-panel button {
+           background: #333;
+           color: white;
+           border: 1px solid #555;
+           margin-top: 5px;
+           padding: 2px 5px;
+           cursor: pointer;
+        }
+
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap');
 
         * {

@@ -1,12 +1,12 @@
 // API Service Layer for Appointment System Frontend
 // This connects your React frontend to the FastAPI backend
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 // Helper function for API calls
 async function apiRequest(endpoint, options = {}) {
   const token = localStorage.getItem('authToken');
-  
+
   const config = {
     headers: {
       'Content-Type': 'application/json',
@@ -18,12 +18,12 @@ async function apiRequest(endpoint, options = {}) {
 
   try {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
-    
+
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.detail || 'API request failed');
     }
-    
+
     return await response.json();
   } catch (error) {
     console.error('API Error:', error);
@@ -56,7 +56,8 @@ export const authAPI = {
     });
 
     if (!response.ok) {
-      throw new Error('Login failed');
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Login failed');
     }
 
     const data = await response.json();
@@ -118,10 +119,11 @@ export const providersAPI = {
   },
 
   // Search providers
+  // Search providers
   searchProviders: async (query, category = null) => {
-    const params = new URLSearchParams({ q: query });
-    if (category) params.append('category', category);
-    return apiRequest(`/providers/search?${params.toString()}`);
+    const params = new URLSearchParams({ search: query });
+    if (category) params.append('profession', category);
+    return apiRequest(`/providers?${params.toString()}`);
   },
 
   // Get provider availability
@@ -144,8 +146,8 @@ export const providersAPI = {
 export const servicesAPI = {
   // Get all services
   getServices: async (providerId = null) => {
-    const endpoint = providerId 
-      ? `/services?provider_id=${providerId}` 
+    const endpoint = providerId
+      ? `/services?provider_id=${providerId}`
       : '/services';
     return apiRequest(endpoint);
   },
@@ -178,10 +180,15 @@ export const appointmentsAPI = {
 
   // Get user appointments
   getUserAppointments: async (userId, status = null) => {
-    const endpoint = status 
-      ? `/appointments/user/${userId}?status=${status}` 
+    const endpoint = status
+      ? `/appointments/user/${userId}?status=${status}`
       : `/appointments/user/${userId}`;
     return apiRequest(endpoint);
+  },
+
+  // Get provider appointments (for cockpit)
+  getProviderAppointments: async () => {
+    return apiRequest('/appointments/provider/me');
   },
 
   // Get appointment by ID
@@ -229,6 +236,20 @@ export const appointmentsAPI = {
     return apiRequest(`/appointments/${appointmentId}/rate`, {
       method: 'POST',
       body: JSON.stringify({ rating, review }),
+    });
+  },
+
+  // Cockpit: Call next customer
+  callNext: async () => {
+    return apiRequest(`/appointments/queue/next`, {
+      method: 'POST',
+    });
+  },
+
+  // Cockpit: Finish current customer
+  finishCurrent: async () => {
+    return apiRequest(`/appointments/queue/finish`, {
+      method: 'POST',
     });
   },
 };
@@ -283,8 +304,8 @@ export const analyticsAPI = {
 
   // Get wait time statistics
   getWaitTimeStats: async (providerId = null) => {
-    const endpoint = providerId 
-      ? `/analytics/wait-time?provider_id=${providerId}` 
+    const endpoint = providerId
+      ? `/analytics/wait-time?provider_id=${providerId}`
       : '/analytics/wait-time';
     return apiRequest(endpoint);
   },
@@ -319,7 +340,7 @@ export class QueueWebSocket {
   connect() {
     const token = localStorage.getItem('authToken');
     const wsUrl = `ws://localhost:8000/ws/queue/${this.appointmentId}?token=${token}`;
-    
+
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {

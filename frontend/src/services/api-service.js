@@ -1,9 +1,9 @@
 // API Service Layer for Appointment System Frontend
 // This connects your React frontend to the FastAPI backend
 
-// When using Create React App's proxy (configured in package.json),
-// we use relative URLs in development. The proxy will forward them to the backend.
-const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+// Use absolute URLs pointing to backend on port 8000
+// CORS is already configured in the FastAPI backend (app/main.py)
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 // Helper function for API calls
 async function apiRequest(endpoint, options = {}) {

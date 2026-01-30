@@ -15,3 +15,5 @@ numpy>=1.26.3
 httpx>=0.26.0
 pytest>=8.0.0
 pytest-asyncio>=0.23.4
+argon2-cffi==25.1.0
+argon2-cffi-bindings==25.1.0

@@ -15,6 +15,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# Logs
+*.log
+
 # Node
 node_modules/
 npm-debug.log

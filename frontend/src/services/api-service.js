@@ -1,7 +1,9 @@
 // API Service Layer for Appointment System Frontend
 // This connects your React frontend to the FastAPI backend
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+// When using Create React App's proxy (configured in package.json),
+// we use relative URLs in development. The proxy will forward them to the backend.
+const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
 // Helper function for API calls
 async function apiRequest(endpoint, options = {}) {
@@ -47,7 +49,11 @@ export const authAPI = {
     formData.append('username', credentials.email);
     formData.append('password', credentials.password);
 
-    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+    const url = `${API_BASE_URL}/auth/login`;
+    console.log('🔍 DEBUG: Login URL:', url);
+    console.log('🔍 DEBUG: API_BASE_URL:', API_BASE_URL);
+
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -55,8 +61,16 @@ export const authAPI = {
       body: formData,
     });
 
+    console.log('🔍 DEBUG: Response status:', response.status, response.statusText);
+
     if (!response.ok) {
-      const errorData = await response.json();
+      let errorData;
+      try {
+        errorData = await response.json();
+      } catch (e) {
+        errorData = { detail: response.statusText };
+      }
+      console.error('🔍 DEBUG: Login error:', errorData);
       throw new Error(errorData.detail || 'Login failed');
     }
 
